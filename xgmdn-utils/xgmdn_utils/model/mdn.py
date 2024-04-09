@@ -75,9 +75,6 @@ class MDN(nn.Module):
 
 
 class XGMDNLoss(nn.Module):
-    ONEOVERSQRT2PI = 1.0 / math.sqrt(2 * math.pi)
-    LOG2PI = math.log(2 * math.pi)
-
     def forward(self, y, pi, sigma, mu):
         return self.calculate_loss(y=y, pi=pi, sigma=sigma, mu=mu)
 
