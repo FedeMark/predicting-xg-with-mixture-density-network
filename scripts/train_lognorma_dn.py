@@ -1,8 +1,8 @@
 """Script to perform a training of xGMDN"""
 
 from typing import Dict, Tuple, Generator
-from xgmdn_utils.model.mdn import xGMDN
-from xgmdn_utils.training.lightning import xGMDNLightning
+from xgmdn_utils.model.mavi import xGDN
+from xgmdn_utils.training.lightning import xGDNLightning
 from torch.optim import AdamW
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning import Trainer
@@ -28,13 +28,13 @@ torch.set_float32_matmul_precision("medium")
 
 CFG = {
     "dataloader_kwargs": {"batch_size": 128, "num_workers": 8},
-    "early_stopping": {"patience": 100, "monitor": "val_loss", "min_delta": 1e-2},
-    "model_args": {"input_dim": 176, "hidden_dims": [30, 15], "num_gaussians": 4},
+    "early_stopping": {"patience": 100, "monitor": "val_loss", "min_delta": 1e-4},
+    "model_args": {"input_dim": 176, "hidden_dims": [50, 25]},
     "optimizer_args": {"lr": 1e-4, "weight_decay": 0.05},
     "trainer_args": {
-        "max_epochs": 1000,
+        "max_epochs": 500,
         "accelerator": "gpu",
-        # "gradient_clip_val": 1,
+        "gradient_clip_val": 2,
     },
     "DATA": {
         "path": SIGMAEFFE_DATA
@@ -84,7 +84,7 @@ def leave_one_league_out(
 
 
 def main(cfg: Dict = CFG):
-    model = xGMDN(**cfg["model_args"])
+    model = xGDN(**cfg["model_args"])
     summary(model, input_size=(32, 176))
 
     experiment_id = mlflow.create_experiment(f"xGMDN_CrossValidation_{time.time()}")
@@ -99,9 +99,9 @@ def main(cfg: Dict = CFG):
             run_id = run.info.run_id
             run_folder = experiment_folder / run_id
 
-            model = xGMDN(**cfg["model_args"])
+            model = xGDN(**cfg["model_args"])
             optimizer = AdamW(params=model.parameters(), **cfg["optimizer_args"])
-            lightning_module = xGMDNLightning(
+            lightning_module = xGDNLightning(
                 model=model,
                 optimizer=optimizer,
                 scheduler=SequentialLR(
@@ -109,7 +109,7 @@ def main(cfg: Dict = CFG):
                     schedulers=[
                         LinearLR(
                             optimizer=optimizer,
-                            start_factor=1e-6,
+                            start_factor=1e-5,
                             end_factor=1,
                             total_iters=20,
                         ),
@@ -194,30 +194,40 @@ def main(cfg: Dict = CFG):
             )
 
             y = []
-            home_mu_preds = []
-            # home_sigma_preds = []
-            away_mu_preds = []
-            # away_sigma_preds = []
+            home_mean = []
+            home_mu = []
+            home_sigma = []
+            away_mean = []
+            away_mu = []
+            away_sigma = []
 
             for item in test_artifacts:
                 y.append(item["y"])
-                home_mu_preds.append(item["home_mu_pred"].cpu().numpy())
-                # home_sigma_preds.append(item["home_preds"][1].cpu().numpy())
-                away_mu_preds.append(item["away_mu_pred"].cpu().numpy())
-                # away_sigma_preds.append(item["away_preds"][1].cpu().numpy())
 
-            home_mu_preds = np.concatenate(home_mu_preds)
-            # home_sigma_preds = np.concatenate(home_sigma_preds)
-            away_mu_preds = np.concatenate(away_mu_preds)
-            # away_sigma_preds = np.concatenate(away_sigma_preds)
+                home_mean.append(item["home_mean"].cpu().numpy())
+                home_mu.append(item["home_mu"].cpu().numpy())
+                home_sigma.append(item["home_sigma"].cpu().numpy())
+
+                away_mean.append(item["away_mean"].cpu().numpy())
+                away_mu.append(item["away_mu"].cpu().numpy())
+                away_sigma.append(item["away_sigma"].cpu().numpy())
+
+            home_mean = np.concatenate(home_mean)
+            home_mu = np.concatenate(home_mu)
+            home_sigma = np.concatenate(home_sigma)
+            away_mean = np.concatenate(away_mean)
+            away_mu = np.concatenate(away_mu)
+            away_sigma = np.concatenate(away_sigma)
             y = np.concatenate(y)
 
             artifacts_folder = run_folder / "artifacts"
             np.save(artifacts_folder / "y.npy", y)
-            np.save(artifacts_folder / "home_mu_preds.npy", home_mu_preds)
-            # np.save(artifacts_folder / "home_sigma_preds.npy", home_sigma_preds)
-            np.save(artifacts_folder / "away_mu_preds.npy", away_mu_preds)
-            # np.save(artifacts_folder / "away_sigma_preds.npy", away_sigma_preds)
+            np.save(artifacts_folder / "home_mean.npy", home_mean)
+            np.save(artifacts_folder / "home_mu.npy", home_mu)
+            np.save(artifacts_folder / "home_sigma.npy", home_sigma)
+            np.save(artifacts_folder / "away_mean.npy", away_mean)
+            np.save(artifacts_folder / "away_mu.npy", away_mu)
+            np.save(artifacts_folder / "away_sigma.npy", away_sigma)
 
     print(
         f"Average loss {sum(losses)/len(losses)}, average MSE {sum(test_mse)/len(test_mse)}"

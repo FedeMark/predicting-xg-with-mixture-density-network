@@ -4,8 +4,7 @@ https://deep-and-shallow.com/2021/03/20/mixture-density-networks-probabilistic-r
 
 from typing import Tuple
 import torch.nn as nn
-from torch.distributions import Normal, Gamma
-import math
+from torch.distributions import Normal
 import torch
 from typing import Sequence
 
@@ -16,7 +15,7 @@ def init_weights(module):
             init_weights(sub_module)
     elif isinstance(module, nn.Linear):
         nn.init.kaiming_normal_(module.weight)
-        nn.init.constant_(module.bias, 0.1)
+        nn.init.constant_(module.bias, 0.01)
 
 
 class StdActivation(nn.Module):
@@ -78,23 +77,28 @@ class XGMDNLoss(nn.Module):
     def forward(self, y, pi, sigma, mu):
         return self.calculate_loss(y=y, pi=pi, sigma=sigma, mu=mu)
 
-    def gaussian_probability(self, sigma, mu, target):
+    @staticmethod
+    def probability(sigma, mu, target):
         """
         Inspired by https://github.com/sagelywizard/pytorch-mdn/blob/master/mdn/mdn.py
         """
         target = torch.unsqueeze(target, dim=1).expand_as(sigma)
-        model_dist = Normal(mu, sigma)
+        model_dist = Normal(mu, sigma)  # Normal
 
-        return model_dist.log_prob(target)
+        return model_dist.log_prob(target + 1e-15)
 
-    def log_prob(self, pi, sigma, mu, y):
-        log_component_prob = self.gaussian_probability(sigma, mu, y)
+    @staticmethod
+    def mixture_log_proba(pi, sigma, mu, y):
+        log_component_prob = XGMDNLoss.probability(sigma, mu, y)
         weighted_log_component_prob = pi * log_component_prob
+        ## WRONG
+        raise NotImplementedError()
         return torch.logsumexp(weighted_log_component_prob, dim=-1)
+        # return weighted_log_component_prob.sum(dim=-1)
 
-    def calculate_loss(self, y, pi, sigma, mu, tag="train"):
+    def calculate_loss(self, y, pi, sigma, mu):
         # NLL Loss
-        log_prob = self.log_prob(pi, sigma, mu, y)
+        log_prob = self.mixture_log_proba(pi, sigma, mu, y)
         loss = torch.mean(-log_prob)
 
         return loss
